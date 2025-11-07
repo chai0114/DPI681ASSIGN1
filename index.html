@@ -95,28 +95,43 @@
   <h2 id="m2">Module 2: Representing Meaning</h2>
 
   <section id="s5" class="card">
-    <div class="row">
-      <div>
-        <h3>5–6) Word Embeddings — Meaning as Locations</h3>
-        <div class="status-box status-ok">Goals: click to read cosine similarities · observe neighborhoods & analogy arrows.</div>
-        <div class="status-box status-err">Pitfall: 2D is illustrative; real vectors are high‑dimensional.</div>
-        <p><strong>Concept.</strong> Map each word to a vector; similar usage ⇒ nearby vectors.</p>
-        <p><strong>Principle.</strong> Learn vectors so words predict each other (CBOW/Skip‑gram); similarity ≈ cosine.</p>
-        <div class="controls">
-          <button class="btn" id="s5-reset">Reset layout</button>
-          <span class="pill">Click a word to see its similarity to others.</span>
-        </div>
-        <details><summary>Key Principle (How it works)</summary>
-          <p>We place six words at hand‑picked coordinates. Clicking a word computes cosine to all others and draws weighted lines; orange arrows show <em>man→woman ≈ king→queen</em>.</p>
-        </details>
+  <div class="row">
+    <div>
+      <h3>5–6) Word Embeddings — CBOW with Short Sentences</h3>
+      <div class="status-box status-ok">Goals: see each word as a vector · average context vectors · predict the next word from cosine similarity.</div>
+      <div class="status-box status-err">Pitfall: averaging is a teaching simplification; real models learn much richer context functions.</div>
+      <p><strong>Concept.</strong> Each word is a vector. To predict the next word, take the <em>average</em> of the context vectors and choose the candidate whose vector is most similar (cosine).</p>
+      <p><strong>Principle.</strong> This is the CBOW idea from word2vec: predict a target from surrounding words using the mean of their embeddings. (As in the class handout.)</p>
+      <div class="controls">
+        <label>Example 
+          <select id="s5-example" class="kbd">
+            <option value="sonnet">Shall I compare thee to a summer’s ___</option>
+            <option value="directions">I should turn right at the light ___</option>
+          </select>
+        </label>
+        <label><input id="s5-ignore-stops" type="checkbox" checked> Ignore stopwords</label>
+        <button class="btn" id="s5-predict">Predict next word</button>
+        <button class="btn" id="s5-reset-emb">Reset example</button>
       </div>
-      <div>
-        <canvas id="s5-canvas" width="500" height="320" aria-label="embedding map" tabindex="0"></canvas>
-        <div id="s5-legend" class="small mono" aria-live="polite" style="margin-top:.35rem"></div>
-        <div class="legend small">Cosine sim: <span class="chip">0.8–1.0</span><span class="chip">0.6–0.8</span><span class="chip">&lt;0.6</span></div>
-      </div>
+      <details><summary>Key Principle (How it works)</summary>
+        <ol>
+          <li>Map each token in the context to a 2-D vector (shown on the map).</li>
+          <li>Compute the <strong>mean vector</strong> μ of the selected context tokens.</li>
+          <li>For each candidate next word, compute cosine(μ, v<sub>candidate</sub>).</li>
+          <li>Softmax over those cosines → bars below. Top item is appended.</li>
+        </ol>
+        <p class="small">This mirrors the “Average of other word vectors” CBOW diagram and the Shakespeare example from your slides. </p>
+      </details>
     </div>
-  </section>
+    <div>
+      <canvas id="s5-map" width="520" height="340" aria-label="embedding map"></canvas>
+      <figcaption class="small">Blue points = context words (click to toggle include). Orange star = mean μ. Hollow ring = top prediction. Bars = softmax over cosine scores.</figcaption>
+      <div id="s5-bars" class="sketch" style="margin-top:.5rem"></div>
+      <div id="s5-table" class="small mono" style="margin-top:.35rem" aria-live="polite"></div>
+    </div>
+  </div>
+</section>
+
 
   <section id="s7" class="card">
     <div class="row">

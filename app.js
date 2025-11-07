@@ -371,60 +371,193 @@ Which alters when it alteration finds, or bends with the remover to remove.`;
 })();
 
 
-/* === Scene 5–6: embeddings mini-map (Patched: numeric legend) === */
+/* === Scene 5–6: CBOW embeddings (short sentences, average vector) === */
 (function(){
-  const canvas=$('#s5-canvas');const ctx=canvas.getContext('2d');
-  const words=[
-    {w:'king',v:[0.9,0.8]},{w:'queen',v:[0.85,0.95]},{w:'man',v:[0.6,0.4]},
-    {w:'woman',v:[0.62,0.58]},{w:'pizza',v:[0.15,0.2]},{w:'pasta',v:[0.2,0.18]}
-  ];
-  const W=canvas.width,H=canvas.height;const pad=40;
-  function toXY([x,y]){return [pad+x*(W-2*pad), H-pad-y*(H-2*pad)];}
-  function cosine(a,b){const d=dot(a,b);const na=Math.hypot(...a);const nb=Math.hypot(...b);return d/(na*nb)}
-  let selected=-1;
-  function draw(){
-    ctx.clearRect(0,0,W,H);ctx.strokeStyle='#ddd';ctx.lineWidth=1;
-    for(let i=0;i<5;i++){const x=pad+i*(W-2*pad)/4;ctx.beginPath();ctx.moveTo(x,pad);ctx.lineTo(x,H-pad);ctx.stroke()}
-    for(let i=0;i<5;i++){const y=pad+i*(H-2*pad)/4;ctx.beginPath();ctx.moveTo(pad,y);ctx.lineTo(W-pad,y);ctx.stroke()}
-    ctx.strokeStyle='var(--ink)';ctx.lineWidth=2;ctx.strokeRect(pad,pad,W-2*pad,H-2*pad);
-    if(selected>=0){
-      const v0=words[selected].v;
-      const lines=[];
-      words.forEach((p,i)=>{
-        if(i===selected) return;
-        const sim=cosine(v0,p.v); lines.push({w:p.w,s:sim});
-        const [x0,y0]=toXY(v0);const [x1,y1]=toXY(p.v);
-        ctx.strokeStyle='rgba(42,123,210,'+(Math.max(0,sim)*0.8)+')';ctx.lineWidth=4*Math.max(0,sim);
-        ctx.beginPath();ctx.moveTo(x0,y0);ctx.lineTo(x1,y1);ctx.stroke();
-      });
-      $('#s5-legend').textContent = lines.sort((a,b)=>b.s-a.s).map(r=>`${r.w}:${r.s.toFixed(2)}`).join('  |  ');
-    } else { $('#s5-legend').textContent='Click a word to list cosine similarities.'; }
-    words.forEach((p,i)=>{
-      const [x,y]=toXY(p.v);
-      ctx.fillStyle=i===selected? '#2a7bd2':'#000';
-      ctx.beginPath();ctx.arc(x,y,6,0,Math.PI*2);ctx.fill();
-      ctx.fillStyle='#000';ctx.font='bold 14px ui-sans-serif';ctx.fillText(p.w,x+8,y-8);
+  const map = $('#s5-map'); const ctx = map.getContext('2d');
+  const barsHost = $('#s5-bars'); const tableHost = $('#s5-table');
+
+  // Small 2D embedding lexicon tuned so the examples behave intuitively.
+  // Units are arbitrary in [0,1], but cosine similarity will drive predictions.
+  const vec = {
+    // sonnet example
+    "shall":[0.50,0.50],"i":[0.50,0.50],"compare":[0.60,0.55],"thee":[0.56,0.60],"to":[0.50,0.50],"a":[0.50,0.50],
+    "summer's":[0.84,0.84],
+    "day":[0.82,0.79],"night":[0.25,0.80],"river":[0.15,0.30],"story":[0.40,0.25],"temperate":[0.78,0.76],
+
+    // directions example
+    "i":[0.50,0.50],"should":[0.52,0.48],"turn":[0.72,0.35],"right":[0.88,0.30],
+    "at":[0.50,0.50],"the":[0.50,0.50],"light":[0.86,0.32],
+    "right?":[0.88,0.30],"now":[0.60,0.45],"left":[0.15,0.30],"today":[0.55,0.55],"slowly":[0.58,0.40],
+
+    // punctuation fallback
+    ",":[0.50,0.50], "?":[0.50,0.50]
+  };
+  const STOP = new Set(["the","a","an","to","of","and","i","at","shall"]);
+
+  const EXAMPLES = {
+    sonnet: {
+      context: ["shall","i","compare","thee","to","a","summer's"],
+      candidates: ["day","night","river","story","temperate"],
+      label: 'Shall I compare thee to a summer’s ___'
+    },
+    directions: {
+      context: ["i","should","turn","right","at","the","light"],
+      candidates: ["right?","now","left","today","slowly"],
+      label: 'I should turn right at the light ___'
+    }
+  };
+
+  // ---------- math helpers ----------
+  function dot(a,b){ return a[0]*b[0] + a[1]*b[1]; }
+  function norm(a){ return Math.hypot(a[0], a[1]); }
+  function cosine(a,b){
+    const na = norm(a), nb = norm(b);
+    if(na===0 || nb===0) return 0;
+    return dot(a,b)/(na*nb);
+  }
+  function mean(vectors){
+    if(vectors.length===0) return [0,0];
+    const s = vectors.reduce((acc,v)=>[acc[0]+v[0],acc[1]+v[1]],[0,0]);
+    return [ s[0]/vectors.length, s[1]/vectors.length ];
+  }
+  function softmax(xs, T=0.5){ // slight sharpening so top candidate is clear
+    const scaled = xs.map(x => x / T);
+    const m = Math.max(...scaled);
+    const ex = scaled.map(x => Math.exp(x - m));
+    const s = ex.reduce((a,b)=>a+b,0);
+    return ex.map(x => x/s);
+  }
+
+  // ---------- state ----------
+  let exampleKey = $('#s5-example') ? $('#s5-example').value : 'sonnet';
+  let included = new Set(EXAMPLES[exampleKey].context); // click toggles
+
+  // ---------- drawing ----------
+  const PAD = 36; const W = map.width; const H = map.height;
+  function toXY([x,y]){ return [PAD + x*(W-2*PAD), H - PAD - y*(H-2*PAD)]; }
+
+  function drawScatter(ctxWords, candidates, mu, topWord){
+    ctx.clearRect(0,0,W,H);
+    // grid
+    ctx.strokeStyle='#ddd'; ctx.lineWidth=1;
+    for(let i=0;i<5;i++){
+      const x=PAD+i*(W-2*PAD)/4; ctx.beginPath(); ctx.moveTo(x,PAD); ctx.lineTo(x,H-PAD); ctx.stroke();
+      const y=PAD+i*(H-2*PAD)/4; ctx.beginPath(); ctx.moveTo(PAD,y); ctx.lineTo(W-PAD,y); ctx.stroke();
+    }
+    ctx.strokeStyle='var(--ink)'; ctx.lineWidth=2; ctx.strokeRect(PAD,PAD,W-2*PAD,H-2*PAD);
+
+    // context words
+    ctxWords.forEach(w=>{
+      const v = vec[w]; if(!v) return;
+      const [x,y]=toXY(v);
+      ctx.fillStyle = included.has(w) ? '#2a7bd2' : '#999';
+      ctx.beginPath(); ctx.arc(x,y,6,0,Math.PI*2); ctx.fill();
+      ctx.fillStyle='#000'; ctx.font='bold 13px ui-sans-serif';
+      ctx.fillText(w, x+8, y-8);
     });
-    drawArrow(words[2].v, words[3].v, '#f08b2f'); // man→woman
-    drawArrow(words[0].v, words[1].v, '#f08b2f'); // king→queen
+
+    // candidates (gray)
+    candidates.forEach(w=>{
+      const v = vec[w]; if(!v) return;
+      const [x,y]=toXY(v);
+      ctx.strokeStyle='#666'; ctx.lineWidth=2;
+      ctx.beginPath(); ctx.arc(x,y,7,0,Math.PI*2); ctx.stroke();
+      ctx.fillStyle='#000'; ctx.font='bold 13px ui-sans-serif';
+      ctx.fillText(w, x+8, y-8);
+    });
+
+    // mean μ (orange star)
+    const [mx,my]=toXY(mu);
+    ctx.fillStyle='#f08b2f';
+    ctx.beginPath();
+    for(let i=0;i<5;i++){
+      const ang = -Math.PI/2 + i*2*Math.PI/5;
+      const r = (i%2===0 ? 10 : 5);
+      const x = mx + r*Math.cos(ang), y = my + r*Math.sin(ang);
+      if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+    }
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle='#000'; ctx.font='bold 12px ui-sans-serif'; ctx.fillText('μ', mx+10, my-8);
+
+    // ring top prediction
+    if(topWord && vec[topWord]){
+      const [tx,ty]=toXY(vec[topWord]);
+      ctx.strokeStyle='#f08b2f'; ctx.lineWidth=3;
+      ctx.beginPath(); ctx.arc(tx,ty,12,0,Math.PI*2); ctx.stroke();
+    }
   }
-  function drawArrow(a,b,color){
-    const [x0,y0]=toXY(a);const [x1,y1]=toXY(b);
-    ctx.strokeStyle=color;ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(x0,y0);ctx.lineTo(x1,y1);ctx.stroke();
-    const ang=Math.atan2(y1-y0,x1-x0);const len=9;
-    ctx.beginPath();ctx.moveTo(x1,y1);
-    ctx.lineTo(x1-len*Math.cos(ang-0.4), y1-len*Math.sin(ang-0.4));
-    ctx.lineTo(x1-len*Math.cos(ang+0.4), y1-len*Math.sin(ang+0.4));
-    ctx.closePath();ctx.fillStyle=color;ctx.fill();
+
+  function drawBars(items){
+    drawBarRow(barsHost, items, { normalize:false });
   }
-  canvas.addEventListener('click',(ev)=>{
-    const r=canvas.getBoundingClientRect();const x=ev.clientX-r.left;const y=ev.clientY-r.top;
-    let hit=-1;words.forEach((p,i)=>{const [px,py]=toXY(p.v);if(Math.hypot(px-x,py-y)<10) hit=i});
-    selected=hit;draw();
+
+  function renderTable(ctxWords, mu, scores){
+    const parts = [];
+    parts.push(`Context (included): ${ctxWords.filter(w=>included.has(w)).join(' ') || '(none)'}`);
+    parts.push(`μ = [${mu[0].toFixed(2)}, ${mu[1].toFixed(2)}]`);
+    parts.push(`Cosines: ${scores.map(s=>`${s.word}:${s.cos.toFixed(2)}`).join('  |  ')}`);
+    tableHost.textContent = parts.join('  •  ');
+  }
+
+  // ---------- interaction ----------
+  function currentExample(){ return EXAMPLES[exampleKey]; }
+  function activeContextWords(){
+    const ignoreStops = $('#s5-ignore-stops')?.checked;
+    const base = currentExample().context.slice();
+    return base.filter(w => included.has(w) && !(ignoreStops && STOP.has(w)));
+  }
+
+  function compute(){
+    const ex = currentExample();
+    const ctxWords = activeContextWords();
+    const ctxVecs = ctxWords.map(w => vec[w] || [0.5,0.5]);
+    const mu = mean(ctxVecs);
+
+    const cosines = ex.candidates.map(w => ({
+      word: w,
+      cos: cosine(mu, vec[w] || [0.5,0.5])
+    }));
+    const probs = softmax(cosines.map(c=>c.cos), 0.5);
+    const items = cosines
+      .map((c,i)=>({ word:c.word, p:probs[i], cos:c.cos }))
+      .sort((a,b)=>b.p-a.p);
+
+    drawScatter(ex.context, ex.candidates, mu, items[0]?.word);
+    drawBars(items);
+    renderTable(ctxWords, mu, items);
+  }
+
+  function resetExample(){
+    included = new Set(currentExample().context);
+    compute();
+  }
+
+  // clicks on points to toggle inclusion
+  map.addEventListener('click', ev=>{
+    const r = map.getBoundingClientRect();
+    const x = ev.clientX - r.left, y = ev.clientY - r.top;
+    // hit test only for context words (not candidates)
+    const ex = currentExample();
+    for(const w of ex.context){
+      const v = vec[w]; if(!v) continue;
+      const [px,py] = toXY(v);
+      if(Math.hypot(px - x, py - y) < 10){
+        if(included.has(w)) included.delete(w); else included.add(w);
+        compute(); return;
+      }
+    }
   });
-  $('#s5-reset').addEventListener('click',()=>{selected=-1;draw()});
-  draw();
+
+  // wire UI
+  $('#s5-example').addEventListener('change', (e)=>{ exampleKey = e.target.value; resetExample(); });
+  $('#s5-ignore-stops').addEventListener('change', compute);
+  $('#s5-predict').addEventListener('click', compute);
+  $('#s5-reset-emb').addEventListener('click', resetExample);
+
+  // initial
+  resetExample();
 })();
+
 
 /* === Scene 7: toy NN (Patched: biases + hidden activations + noise) === */
 (function(){
