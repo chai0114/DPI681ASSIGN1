@@ -559,65 +559,197 @@ Which alters when it alteration finds, or bends with the remover to remove.`;
 })();
 
 
-/* === Scene 7: toy NN (Patched: biases + hidden activations + noise) === */
+/* === Scene 7: 2×2 network diagram (inputs→hidden→outputs) === */
 (function(){
-  const sketch=$('#s7-sketch');
-  const labels=['Vertical','Horizontal','Diagonal','None'];
+  const canvas = $('#s7-net');
+  const ctx = canvas.getContext('2d');
+  const barsHost = $('#s7-bars');
+
+  const labels = ['Vertical','Horizontal','Diagonal','None'];
+
+  // Pretrained tiny model (same values as 이전 예제)
   const model = {
+    // Input[4] -> Hidden[3]
     W_ih: [
-      [ 2.0, -1.0,  1.0],
-      [-1.0,  2.0, -1.0],
-      [ 2.0, -1.0, -1.0],
-      [-1.0,  2.0,  1.0]
+      [ 2.0, -1.0,  1.0], // x1 (top-left)
+      [-1.0,  2.0, -1.0], // x2 (top-right)
+      [ 2.0, -1.0, -1.0], // x3 (bottom-left)
+      [-1.0,  2.0,  1.0]  // x4 (bottom-right)
     ],
     b_h: [0.2, 0.2, 0.1],
+    // Hidden[3] -> Output[4]
     W_ho: [
-      [ 3.0, -1.0, -1.0, -1.0],
-      [-1.0,  3.0, -1.0, -1.0],
-      [-1.0, -1.0,  3.0, -1.0]
+      [ 3.0, -1.0, -1.0, -1.0], // h1 → (V,H,D,None)
+      [-1.0,  3.0, -1.0, -1.0], // h2 →
+      [-1.0, -1.0,  3.0, -1.0]  // h3 →
     ],
     b_o: [0,0,0,0]
   };
-  const inputs = {
+
+  // Input presets
+  const PRESETS = {
     Vertical:   [1,0,1,0],
     Horizontal: [1,1,0,0],
     Diagonal:   [1,0,0,1],
     None:       [0,0,0,0],
     All:        [1,1,1,1]
   };
+
+  // Math helpers
   const relu = x => Math.max(0, x);
-  function predict(input) {
-    let hidden = [0,0,0];
-    for (let h = 0; h < 3; h++) {
-      hidden[h] = model.b_h[h];
-      for (let i = 0; i < 4; i++) hidden[h] += input[i] * model.W_ih[i][h];
-    }
-    const hidden_activated = hidden.map(relu);
-    let output = [0,0,0,0];
-    for (let o = 0; o < 4; o++) {
-      output[o] = model.b_o[o];
-      for (let h = 0; h < 3; h++) output[o] += hidden_activated[h] * model.W_ho[h][o];
-    }
-    return { probs: softmax(output), hidden: hidden_activated };
+  function softmax(arr, T=1){
+    const scaled = arr.map(v => v / T);
+    const m = Math.max(...scaled);
+    const ex = scaled.map(v => Math.exp(v - m));
+    const s = ex.reduce((a,b)=>a+b,0);
+    return ex.map(v => v/s);
   }
-  function render(type){
-    sketch.innerHTML = '';
-    const input = inputs[type];
-    const grid=el('div');grid.style.display='grid';grid.style.gridTemplateColumns='repeat(2,30px)';grid.style.gap='4px';grid.style.marginBottom='1rem';
-    input.forEach(pixel=>{const d=el('div');d.style.width='28px';d.style.height='28px';d.style.border='2px solid var(--ink)';d.style.borderRadius='6px';d.style.background= pixel ? 'var(--accent)':'#fff';grid.appendChild(d)});
-    sketch.appendChild(grid);
-    // Hidden activations
-    const { probs, hidden } = predict(input);
-    const hItems = hidden.map((v,i)=>({word:`h${i+1}`, p: v/Math.max(1, Math.max(...hidden))}));
-    drawBarRow(sketch, hItems, { label:'Activation', normalize:true });
-    // Output probabilities
-    const items = labels.map((w,i) => ({word:w, p:probs[i]})).sort((a,b) => b.p - a.p);
-    drawBarRow(sketch, items, { normalize:false });
+
+  // Layout
+  const W = canvas.width, H = canvas.height;
+  const Lx = 90, Cx = 280, Rx = 470; // x-positions: inputs, hidden, outputs
+  const Iy = [90, 160, 230, 300];    // inputs: 2×2 squares (TL,TR,BL,BR) projected vertically
+  const Hy = [110, 200, 290];        // hidden nodes
+  const Oy = [90, 160, 230, 300];    // outputs
+
+  // Node drawing
+  function drawInput(i, on){
+    // Map i: 0 TL, 1 TR, 2 BL, 3 BR to positions (two rows)
+    const grid = [
+      [Lx, Iy[0]], [Lx, Iy[1]], [Lx, Iy[2]], [Lx, Iy[3]]
+    ];
+    const [x,y] = grid[i];
+    ctx.fillStyle = on ? 'var(--accent)' : '#fff';
+    ctx.strokeStyle = 'var(--ink)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.rect(x-14, y-14, 28, 28);
+    ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#000'; ctx.font = 'bold 12px ui-sans-serif';
+    ctx.fillText(`x${i+1}`, x-22, y-20);
   }
-  ['Vertical','Horizontal','Diagonal','None'].forEach(id => { $('#s7-'+id.toLowerCase()).addEventListener('click',()=>render(id)) });
-  $('#s7-all').addEventListener('click',()=>render('All'));
-  render('Vertical');
+  function drawCircle(x,y,r,fill,stroke,label){
+    ctx.fillStyle = fill; ctx.strokeStyle = stroke; ctx.lineWidth=2;
+    ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill(); ctx.stroke();
+    if(label){ ctx.fillStyle='#000'; ctx.font='bold 12px ui-sans-serif'; ctx.fillText(label, x-r-20, y-r-10); }
+  }
+
+  function linkColor(w, active, showNeg){
+    if(!active) return 'rgba(120,120,120,0.25)';
+    if(w === 0) return 'rgba(120,120,120,0.6)';
+    const s = Math.min(1, Math.abs(w)/3.0); // scale
+    if(w > 0) return `rgba(42,123,210,${0.25 + 0.75*s})`; // blue(+)
+    if(showNeg) return `rgba(195,51,51,${0.25 + 0.75*s})`; // red(−)
+    return 'rgba(120,120,120,0.35)';
+  }
+
+  function drawLink(x0,y0,x1,y1,w,active,showNeg){
+    ctx.strokeStyle = linkColor(w, active, showNeg);
+    ctx.lineWidth = 1 + Math.min(5, Math.abs(w));
+    ctx.beginPath(); ctx.moveTo(x0,y0); ctx.lineTo(x1,y1); ctx.stroke();
+  }
+
+  function predict(x){
+    // hidden pre-acts
+    const z = [0,0,0];
+    for(let h=0; h<3; h++){
+      z[h] = model.b_h[h];
+      for(let i=0; i<4; i++) z[h] += x[i]*model.W_ih[i][h];
+    }
+    const h = z.map(relu);
+    // outputs
+    const y = [0,0,0,0];
+    for(let o=0; o<4; o++){
+      y[o] = model.b_o[o];
+      for(let k=0; k<3; k++) y[o] += h[k]*model.W_ho[k][o];
+    }
+    const p = softmax(y);
+    return { z, h, y, p };
+  }
+
+  function drawDiagram(x, showW, showNeg){
+    ctx.clearRect(0,0,W,H);
+
+    // 1) edges: input→hidden
+    for(let i=0;i<4;i++){
+      const x0 = Lx, y0 = Iy[i];
+      for(let h=0;h<3;h++){
+        const x1 = Cx, y1 = Hy[h];
+        const w = model.W_ih[i][h];
+        drawLink(x0,y0,x1,y1, w, x[i]===1, showNeg);
+      }
+    }
+    // 2) edges: hidden→output (always draw; active scaled by hidden>0)
+    const tmp = predict(x);
+    for(let h=0;h<3;h++){
+      const x0 = Cx, y0 = Hy[h];
+      for(let o=0;o<4;o++){
+        const x1 = Rx, y1 = Oy[o];
+        const w = model.W_ho[h][o];
+        const active = tmp.h[h] > 0;
+        drawLink(x0,y0,x1,y1, w, active, showNeg);
+      }
+    }
+
+    // 3) nodes
+    // inputs
+    for(let i=0;i<4;i++) drawInput(i, x[i]===1);
+
+    // hidden (show z & h)
+    for(let h=0;h<3;h++){
+      drawCircle(Cx, Hy[h], 14, '#fff', 'var(--ink)', `h${h+1}`);
+      // annotations
+      ctx.fillStyle='#000'; ctx.font='11px ui-sans-serif';
+      const { z, h:act } = tmp;
+      ctx.fillText(`z=${z[h].toFixed(1)}`, Cx+18, Hy[h]-2);
+      ctx.fillText(`ReLU=${act[h].toFixed(1)}`, Cx+18, Hy[h]+12);
+    }
+
+    // outputs (show logits & class label)
+    for(let o=0;o<4;o++){
+      drawCircle(Rx, Oy[o], 14, '#fff', 'var(--ink)', labels[o][0]); // first letter tag
+      ctx.fillStyle='#000'; ctx.font='11px ui-sans-serif';
+      ctx.fillText(labels[o], Rx+18, Oy[o]-2);
+      ctx.fillText(`logit=${tmp.y[o].toFixed(1)}`, Rx+18, Oy[o]+12);
+    }
+
+    // 4) weight labels (optional)
+    if(showW){
+      ctx.fillStyle='#333'; ctx.font='11px ui-sans-serif';
+      ctx.fillText('W_ih (4×3) + b_h', Cx-40, 40);
+      ctx.fillText('W_ho (3×4) + b_o', Rx-40, 40);
+    }
+
+    // 5) bars for probabilities
+    const items = labels.map((w,i)=>({word:w, p: tmp.p[i]})).sort((a,b)=>b.p-a.p);
+    drawBarRow(barsHost, items, { normalize:false });
+  }
+
+  function setPattern(name){
+    const x = PRESETS[name];
+    const showW = $('#s7-show-w').checked;
+    const showNeg = $('#s7-show-neg').checked;
+    drawDiagram(x, showW, showNeg);
+  }
+
+  // Wire up
+  ['Vertical','Horizontal','Diagonal','None','All'].forEach(k=>{
+    $('#s7-'+k.toLowerCase()).addEventListener('click',()=>setPattern(k));
+  });
+  $('#s7-show-w').addEventListener('change', ()=>setPattern(currentPattern));
+  $('#s7-show-neg').addEventListener('change', ()=>setPattern(currentPattern));
+
+  let currentPattern = 'Vertical';
+  function setPattern(name){ currentPattern = name; const x = PRESETS[name];
+    const showW = $('#s7-show-w').checked;
+    const showNeg = $('#s7-show-neg').checked;
+    drawDiagram(x, showW, showNeg);
+  }
+
+  // initial
+  setPattern('Vertical');
 })();
+
 
 /* === Scene 8: attention (Patched: show V*) === */
 (function(){

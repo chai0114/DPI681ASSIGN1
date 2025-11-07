@@ -134,30 +134,49 @@
 
 
   <section id="s7" class="card">
-    <div class="row">
-      <div>
-        <h3>7) Toy Neural Net — 2×2 Image Classifier</h3>
-        <div class="status-box status-ok">Goals: see hidden activations (feature detectors) · connect logits→softmax→probabilities.</div>
-        <div class="status-box status-err">Pitfall: weights alone ≠ behavior; bias & nonlinearity matter.</div>
-        <p><strong>Concept.</strong> Layers of simple computations extract features and classify.</p>
-        <p><strong>Principle.</strong> Linear transforms + nonlinearity; learned weights route signal.</p>
-        <div class="controls">
-          <button class="btn" id="s7-vertical">Vertical</button>
-          <button class="btn" id="s7-horizontal">Horizontal</button>
-          <button class="btn" id="s7-diagonal">Diagonal</button>
-          <button class="btn" id="s7-none">None</button>
-          <button class="btn" id="s7-all">All On (noise)</button>
-        </div>
-        <details><summary>Key Principle (How it works)</summary>
-          <p>A tiny 2‑layer perceptron with ReLU and biases. We show hidden activations (h₁–h₃) as bars, then softmax probabilities over 4 classes.</p>
-        </details>
+  <div class="row">
+    <div>
+      <h3>7) Toy Neural Net — 2×2 Diagrammed Perceptron</h3>
+      <div class="status-box status-ok">
+        Goals: see a real 2×2 → 3 (hidden) → 4 (classes) network · watch weights, activations, probabilities.
       </div>
-      <div>
-        <figure class="sketch" id="s7-sketch"></figure>
-        <figcaption class="small">Top: input; Middle: hidden activations; Bottom: class probabilities.</figcaption>
+      <div class="status-box status-err">
+        Pitfall: weights alone don’t explain everything—bias and ReLU matter.
       </div>
+      <p><strong>Concept.</strong> A tiny 2-layer perceptron classifies 2×2 patterns.</p>
+      <p><strong>Principle.</strong> Linear transforms + ReLU, then softmax over 4 classes.</p>
+      <div class="controls">
+        <button class="btn" id="s7-vertical">Vertical</button>
+        <button class="btn" id="s7-horizontal">Horizontal</button>
+        <button class="btn" id="s7-diagonal">Diagonal</button>
+        <button class="btn" id="s7-none">None</button>
+        <button class="btn" id="s7-all">All On (noise)</button>
+        <label class="pill"><input type="checkbox" id="s7-show-w" checked> Show weights</label>
+        <label class="pill"><input type="checkbox" id="s7-show-neg" checked> Show negatives</label>
+      </div>
+      <details><summary>Key Principle (How it works)</summary>
+        <ol>
+          <li>Inputs x ∈ {0,1}⁴ (2×2 pixel grid).</li>
+          <li>Hidden pre-act z<sub>h</sub> = x·W<sub>ih</sub> + b<sub>h</sub> → h = ReLU(z<sub>h</sub>).</li>
+          <li>Logits y = h·W<sub>ho</sub> + b<sub>o</sub> → softmax(y) = class probabilities.</li>
+        </ol>
+        <p class="small">
+          Links are colored by sign (blue = +, red = −) and scaled by |weight|.
+          Dimmed links come from pixels that are 0. Bias and ReLU are annotated near nodes.
+        </p>
+      </details>
     </div>
-  </section>
+    <div>
+      <canvas id="s7-net" width="560" height="340" aria-label="2x2 neural net diagram"></canvas>
+      <figcaption class="small">
+        Left: 2×2 inputs (squares). Mid: 3 hidden units (circles). Right: 4 output classes.
+        Blue = positive weight, Red = negative, thicker = larger |w|.
+      </figcaption>
+      <div class="sketch" id="s7-bars" style="margin-top:.5rem"></div>
+    </div>
+  </div>
+</section>
+
 
   <section id="s8" class="card">
     <div class="row">
