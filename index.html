@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>DPI681M — Interactive Concepts (v2 Patched)</title>
+  <link rel="preconnect" href="https://www.gutenberg.org">
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<header>
+  <div class="wrap navgrid">
+    <h1>DPI681M — Interactive Concept Guide <span class="tag">v2 Patched</span></h1>
+    <nav aria-label="Modules">
+      <a href="#m1">Module 1: Basics</a>
+      <a href="#m2">Module 2: Meaning</a>
+      <a href="#m3">Module 3: Pipeline</a>
+      <a href="#m4">Module 4: Application</a>
+    </nav>
+    <button class="btn" id="reset-all" title="Reset all interactions">Reset</button>
+  </div>
+</header>
+<main class="wrap">
+  <p class="small">Each scene includes: <strong>Concept & principle</strong>, a <strong>working interactive sketch</strong>, and <strong>Key Principles</strong> explaining what you're seeing. Goals & pitfalls are stated up front for efficient learning.</p>
+
+  <h2 id="m1">Module 1: Basic Predictors</h2>
+
+  <section id="s1" class="card">
+    <div class="row">
+      <div>
+        <h3>1) Autocomplete — Next‑word Prediction</h3>
+        <div class="status-box status-ok">Goals: estimate <span class="mono">P(next|context)</span> · read absolute probability bars · see how sampling/appending works.</div>
+        <div class="status-box status-err">Pitfall: Do not confuse relative bar length with true probabilities (we show absolute % by default).</div>
+        <p><strong>Concept.</strong> An LLM is a highly trained <em>next‑token predictor</em>. Given a context, it assigns probabilities to candidate next words.</p>
+        <p><strong>Principle.</strong> Learn a distribution <span class="mono">P(next | context)</span> from text; generation is sampling from that distribution.</p>
+        <div class="controls" aria-label="Controls for scene 1">
+          <label>Prompt <input id="s1-prompt" class="kbd" size="36" value="Shall I compare thee to a"/></label>
+          <button class="btn" id="s1-suggest">Suggest next</button>
+          <button class="btn" id="s1-append">Append top word</button>
+        </div>
+        <details><summary>Key Principle (How it works)</summary>
+          <p>We compute <span class="mono">P(next | context)</span> from the <em>full Shakespeare Sonnets</em> (Project Gutenberg, public domain).</p>
+          <ol>
+            <li>Tokenize to lowercase words (keep apostrophes).</li>
+            <li>Build n‑gram counts up to 4‑grams (3‑token context).</li>
+            <li><strong>Laplace (+1) smoothing</strong> is always on to avoid zeros.</li>
+            <li><strong>Interpolated backoff</strong>: mix 3‑gram, 2‑gram, and 1‑gram distributions with weights λ₃=0.6, λ₂=0.3, λ₁=0.1 (renormalized if some levels are missing).</li>
+            <li>Bars show absolute probabilities; <em>Append</em> inserts the top word and recomputes.</li>
+          </ol>
+          <p><strong>Tip:</strong> Start with <em>“Shall I compare thee to a”</em> and append; you should see <em>summer’s</em> dominate but not 100%, thanks to interpolation + smoothing.</p>
+        </details>
+      </div>
+      <div>
+        <figure class="sketch" id="s1-sketch" aria-live="polite"></figure>
+        <figcaption class="small">Bars show absolute probabilities (0–100%). Computed from Shakespeare’s <em>Sonnets</em> using interpolated n‑gram backoff with Laplace smoothing.</figcaption>
+        <div id="s1-meta" class="small mono" aria-live="polite" style="margin-top:.25rem"></div>
+        <div id="s1-source" class="small" style="margin-top:.25rem"></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="s3" class="card">
+    <div class="row">
+      <div>
+        <h3>3–4) n‑grams — Short Memory Predictors</h3>
+        <div class="status-box status-ok">Goals: experience exact‑match counting · compare n=2/3/4 · see smoothing reduce zeros.</div>
+        <div class="status-box status-err">Pitfall: Larger n ≠ always better. Data sparsity explodes.</div>
+        <p><strong>Concept.</strong> An n‑gram model only looks at the last <span class="mono">n−1</span> tokens. It counts how often contexts are followed by words.</p>
+        <p><strong>Principle.</strong> Markov assumption with limited history; data sparsity grows with larger <span class="mono">n</span>.</p>
+        <div class="controls">
+          <label>n = <input id="s3-n" type="range" min="2" max="4" value="3"/> <span id="s3-nv" class="pill">3</span></label>
+          <label>Context <input id="s3-context" class="kbd" size="28" value="i like"/></label>
+          <label><input type="checkbox" id="s3-smooth"> Laplace smoothing (+1)</label>
+          <button class="btn" id="s3-calc">Compute P(next | context)</button>
+        </div>
+        <details><summary>Key Principle (How it works)</summary>
+          <p>We count n‑grams on a tiny corpus: <small>["i like pizza", "i like pasta", "you like pizza", "i like tea very much"]</small>.</p>
+          <ol>
+            <li>Check the context length = <span class="mono">n−1</span>.</li>
+            <li>Find exact matches and count following words.</li>
+            <li><strong>Smoothing on:</strong> add 1 to every vocabulary word (unseen words included); denominator adds |V|.</li>
+          </ol>
+          <p><strong>Try:</strong> n=2 context="like"; n=3 context="i like"; n=4 context="like tea very"; n=4 context="you like pizza" (sparsity → use smoothing).</p>
+        </details>
+      </div>
+      <div>
+        <figure class="sketch" id="s3-sketch"></figure>
+        <figcaption class="small">Absolute probabilities; enable smoothing to avoid zeros.</figcaption>
+      </div>
+    </div>
+  </section>
+
+  <h2 id="m2">Module 2: Representing Meaning</h2>
+
+  <section id="s5" class="card">
+    <div class="row">
+      <div>
+        <h3>5–6) Word Embeddings — Meaning as Locations</h3>
+        <div class="status-box status-ok">Goals: click to read cosine similarities · observe neighborhoods & analogy arrows.</div>
+        <div class="status-box status-err">Pitfall: 2D is illustrative; real vectors are high‑dimensional.</div>
+        <p><strong>Concept.</strong> Map each word to a vector; similar usage ⇒ nearby vectors.</p>
+        <p><strong>Principle.</strong> Learn vectors so words predict each other (CBOW/Skip‑gram); similarity ≈ cosine.</p>
+        <div class="controls">
+          <button class="btn" id="s5-reset">Reset layout</button>
+          <span class="pill">Click a word to see its similarity to others.</span>
+        </div>
+        <details><summary>Key Principle (How it works)</summary>
+          <p>We place six words at hand‑picked coordinates. Clicking a word computes cosine to all others and draws weighted lines; orange arrows show <em>man→woman ≈ king→queen</em>.</p>
+        </details>
+      </div>
+      <div>
+        <canvas id="s5-canvas" width="500" height="320" aria-label="embedding map" tabindex="0"></canvas>
+        <div id="s5-legend" class="small mono" aria-live="polite" style="margin-top:.35rem"></div>
+        <div class="legend small">Cosine sim: <span class="chip">0.8–1.0</span><span class="chip">0.6–0.8</span><span class="chip">&lt;0.6</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="s7" class="card">
+    <div class="row">
+      <div>
+        <h3>7) Toy Neural Net — 2×2 Image Classifier</h3>
+        <div class="status-box status-ok">Goals: see hidden activations (feature detectors) · connect logits→softmax→probabilities.</div>
+        <div class="status-box status-err">Pitfall: weights alone ≠ behavior; bias & nonlinearity matter.</div>
+        <p><strong>Concept.</strong> Layers of simple computations extract features and classify.</p>
+        <p><strong>Principle.</strong> Linear transforms + nonlinearity; learned weights route signal.</p>
+        <div class="controls">
+          <button class="btn" id="s7-vertical">Vertical</button>
+          <button class="btn" id="s7-horizontal">Horizontal</button>
+          <button class="btn" id="s7-diagonal">Diagonal</button>
+          <button class="btn" id="s7-none">None</button>
+          <button class="btn" id="s7-all">All On (noise)</button>
+        </div>
+        <details><summary>Key Principle (How it works)</summary>
+          <p>A tiny 2‑layer perceptron with ReLU and biases. We show hidden activations (h₁–h₃) as bars, then softmax probabilities over 4 classes.</p>
+        </details>
+      </div>
+      <div>
+        <figure class="sketch" id="s7-sketch"></figure>
+        <figcaption class="small">Top: input; Middle: hidden activations; Bottom: class probabilities.</figcaption>
+      </div>
+    </div>
+  </section>
+
+  <section id="s8" class="card">
+    <div class="row">
+      <div>
+        <h3>8) Transformers & Attention — "Ask and Answer"</h3>
+        <div class="status-box status-ok">Goals: tune which tokens are attended · read weights and the aggregated value vector V*.</div>
+        <div class="status-box status-err">Pitfall: attention weights ≠ explanation of reasoning; it is a routing signal.</div>
+        <p><strong>Concept.</strong> Each token selectively "looks at" other tokens by calculating attention weights.</p>
+        <p><strong>Principle.</strong> Weighted sum of values: <span class="mono">softmax((Q·Kᵀ)/√d) · V</span>.</p>
+        <div class="controls">
+          <label>Focus token (Query) <select id="s8-focus" class="kbd"></select></label>
+        </div>
+        <details><summary>Key Principle (How it works)</summary>
+          <p>We compute true dot‑product attention with tiny Q/K/V vectors. You pick the query token; we show attention weights to all keys and the resulting V* (weighted sum).</p>
+        </details>
+      </div>
+      <div>
+        <figure class="sketch" id="s8-sketch"></figure>
+        <figcaption class="small">Bar chart = attention weights; text shows V*.</figcaption>
+      </div>
+    </div>
+  </section>
+  
+  <h2 id="m3">Module 3: The LLM Pipeline</h2>
+
+  <section id="s9" class="card">
+    <h2>9) Training → Post‑training Pipeline</h2>
+    <div class="status-box status-ok">Goals: separate pretraining (imitate) and post‑training (align).</div>
+    <div class="status-box status-err">Pitfall: post‑training doesn’t re‑learn the world from scratch.</div>
+    <p><strong>Concept.</strong> Pretraining learns to imitate text at scale; post‑training (SFT, preferences) teaches helpfulness and safety.</p>
+    <p><strong>Principle.</strong> Same base model; behavior shaped by additional data and objectives.</p>
+    <div class="controls"><button class="btn" id="s9-toggle">Toggle: Pretrain vs Post‑train</button></div>
+    <figure class="sketch" id="s9-sketch"></figure>
+  </section>
+  
+  <section id="s11" class="card">
+    <div class="row">
+      <div>
+        <h3>11) Prompting Habit — TIC Template</h3>
+        <div class="status-box status-ok">Goals: separate Task/Instructions/Context; build a clear prompt.</div>
+        <div class="status-box status-err">Pitfall: mixing goals, style, and background in one sentence.</div>
+        <p><strong>Concept.</strong> Make the <em>Task</em>, <em>Instructions</em>, and <em>Context</em> explicit.</p>
+        <p><strong>Principle.</strong> Reduce ambiguity; add few‑shot examples when possible.</p>
+        <div class="grid">
+          <label>Task<textarea id="s11-t" rows="3" class="kbd" placeholder="Summarize the text."></textarea></label>
+          <label>Instructions<textarea id="s11-i" rows="3" class="kbd" placeholder="In 3 bullet points, for a non-expert."></textarea></label>
+          <label>Context<textarea id="s11-c" rows="3" class="kbd" placeholder="The text is about..."></textarea></label>
+          <div><button class="btn" id="s11-build">Build prompt</button></div>
+        </div>
+      </div>
+      <div>
+        <figure class="sketch" id="s11-sketch"></figure>
+        <figcaption class="small">A structured prompt card is generated here.</figcaption>
+      </div>
+    </div>
+  </section>
+
+  <section id="s12" class="card">
+    <h2>12) Reasoning — Chain‑of‑Thought</h2>
+    <div class="status-box status-ok">Goals: compare fast vs step‑by‑step on the same problem.</div>
+    <div class="status-box status-err">Pitfall: CoT is not needed for trivial tasks.</div>
+    <p><strong>Concept.</strong> Asking for steps often improves accuracy on hard problems.</p>
+    <p><strong>Principle.</strong> More tokens allow intermediate computations; some models are trained to produce better steps.</p>
+    <div class="controls"><button class="btn" id="s12-fast">Fast Answer</button> <button class="btn" id="s12-cot">Step‑by‑Step</button></div>
+    <figure class="sketch" id="s12-sketch"></figure>
+  </section>
+
+  <h2 id="m4">Module 4: Advanced Application</h2>
+  
+  <section id="s15" class="card">
+    <h2>15) What’s Behind One Prompt — Hidden Stack</h2>
+    <div class="status-box status-ok">Goals: visualize layers that accompany your prompt.</div>
+    <div class="status-box status-err">Pitfall: evaluating outputs without considering hidden context.</div>
+    <p><strong>Concept.</strong> The response depends on <em>system rules</em>, <em>custom settings</em>, <em>thread history</em>, <em>retrieved docs</em>, and <em>tool results</em>, not just your last message.</p>
+    <p><strong>Principle.</strong> Stable setups beat one‑off prompts.</p>
+    <div class="controls">
+      <label><input type="checkbox" class="s15" data-key="System Prompt"> System Prompt</label>
+      <label><input type="checkbox" class="s15" data-key="Chat History" checked> Chat History</label>
+      <label><input type="checkbox" class="s15" data-key="RAG Docs"> RAG Docs</label>
+      <label><input type="checkbox" class="s15" data-key="Tool Results"> Tool Results</label>
+    </div>
+    <figure class="sketch" id="s15-sketch"></figure>
+  </section>
+
+  <section id="s16" class="card">
+    <h2>16) Agents — Goal‑Directed Loops</h2>
+    <div class="status-box status-ok">Goals: step through Plan→Act→Read→Adjust.</div>
+    <div class="status-box status-err">Pitfall: autonomy without guardrails.</div>
+    <p><strong>Concept.</strong> Plan → Act (tools) → Read → Adjust → (repeat).</p>
+    <p><strong>Principle.</strong> Autonomy increases capability and risk; add guardrails.</p>
+    <div class="controls"><button class="btn" id="s16-step">Step loop</button></div>
+    <figure class="sketch" id="s16-sketch"></figure>
+  </section>
+
+  <section id="s17" class="card">
+    <div class="row">
+      <div>
+        <h3>17) Creativity Knob — Temperature</h3>
+        <div class="status-box status-ok">Goals: see how T reshapes the distribution; run two sampling experiments.</div>
+        <div class="status-box status-err">Pitfall: confusing temperature with “randomness only”.</div>
+        <p><strong>Concept.</strong> Low temperature → steadier answers; high → more variety.</p>
+        <p><strong>Principle.</strong> Softmax with temperature rescales logits; higher T flattens the distribution.</p>
+        <div class="controls">
+          <label>T = <input id="s17-T" type="range" min="0.1" max="2.0" value="0.8" step="0.1"/> <span id="s17-Tv" class="pill">0.8</span></label>
+          <button class="btn" id="s17-sample">Sample next word</button>
+        </div>
+        <details><summary>Experiment instructions</summary>
+          <ol>
+            <li>Set T=0.2 and click <em>Sample</em> five times. Record results.</li>
+            <li>Set T=1.8 and click <em>Sample</em> five times. Compare diversity.</li>
+          </ol>
+        </details>
+      </div>
+      <div>
+        <figure class="sketch" id="s17-sketch"></figure>
+        <figcaption class="small">Absolute probabilities; sampling highlights the chosen row briefly.</figcaption>
+      </div>
+    </div>
+  </section>
+  
+  </main>
+  <script defer src="app.js"></script>
+</body>
+</html>
