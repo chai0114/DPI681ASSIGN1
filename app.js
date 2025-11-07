@@ -207,57 +207,169 @@ Which alters when it alteration finds, or bends with the remover to remove.`;
   loadSonnets();
 })();
 
-/* === Scene 3–4: n-gram toy (Patched + smoothing) === */
+/* === Scene 3–4: n-gram (10-sentence corpus + calculation table) === */
 (function(){
-  const corpus = [
-    ['i','like','pizza'],
-    ['i','like','pasta'],
-    ['you','like','pizza'],
-    ['i','like','tea','very','much']
+  const sketch = $('#s3-sketch');
+  const tableHost = $('#s3-table');
+  const corpusHost = $('#s3-corpus');
+
+  // 10-sentence toy corpus (lowercase)
+  const corpusSentences = [
+    'i like pizza',
+    'i like pasta',
+    'you like pizza',
+    'i like tea very much',
+    'you love pasta',
+    'they like tea',
+    'we like pizza and pasta',
+    'i love pizza very much',
+    'you like pasta very much',
+    'we love tea and pizza'
   ];
+  const corpus = corpusSentences.map(s => s.trim().split(/\s+/));
   const vocab = Array.from(new Set(corpus.flat()));
-  const sketch=$('#s3-sketch');
-  function computeNGrams() {
+
+  // Show corpus for transparency
+  function renderCorpus(){
+    const det = document.createElement('details');
+    det.innerHTML = '<summary>Corpus (10 sentences)</summary>';
+    const ol = document.createElement('ol');
+    corpusSentences.forEach(s => { const li = document.createElement('li'); li.textContent = s; ol.appendChild(li); });
+    det.appendChild(ol);
+    corpusHost.innerHTML = '';
+    corpusHost.appendChild(det);
+  }
+
+  // Bars (absolute probabilities by default)
+  function drawBars(items){
+    drawBarRow(sketch, items, { normalize:false });
+  }
+
+  // Nice status
+  function status(msg, kind='ok'){
+    showStatus(sketch, msg, kind);
+  }
+
+  // Build calculation table (raw counts + smoothed prob)
+  function buildTable(rawCounts, rawTotal, contextStr, n, matches, smoothingOn){
+    tableHost.innerHTML = '';
+
+    const head = document.createElement('div');
+    head.className = 'status-box status-ok';
+    const unseenCount = Math.max(0, vocab.length - Object.keys(rawCounts).length);
+    head.textContent =
+      `n=${n} • context="${contextStr}" • matches=${rawTotal}` +
+      (smoothingOn ? ` • Laplace(+1): |V|=${vocab.length}, unseen=${unseenCount}` : '');
+    tableHost.appendChild(head);
+
+    const explain = document.createElement('p');
+    explain.className = 'small';
+    explain.innerHTML = smoothingOn
+      ? `P(next|ctx) = (count(ctx→w) + 1) / (Σ counts + |V|). Unseen words also get +1; their combined mass is <span class="mono">${unseenCount}/(${rawTotal}+${vocab.length})</span>.`
+      : `P(next|ctx) = count(ctx→w) / Σ counts.`;
+    tableHost.appendChild(explain);
+
+    const table = document.createElement('table');
+    table.style.width='100%'; table.style.borderCollapse='collapse';
+    const thead=document.createElement('thead');
+    const trh=document.createElement('tr');
+    ['Next word','Raw count','Probability'].forEach(h=>{
+      const th=document.createElement('th');
+      th.textContent=h; th.style.textAlign='left';
+      th.style.borderBottom='2px solid var(--ink)'; th.style.padding='.25rem';
+      trh.appendChild(th);
+    });
+    thead.appendChild(trh); table.appendChild(thead);
+
+    const denom = smoothingOn ? (rawTotal + vocab.length) : rawTotal;
+    const tbody=document.createElement('tbody');
+    Object.entries(rawCounts).sort((a,b)=>b[1]-a[1]).forEach(([w,c])=>{
+      const tr=document.createElement('tr');
+      const tdw=document.createElement('td'); tdw.textContent=w; tdw.style.padding='.25rem';
+      const tdc=document.createElement('td'); tdc.textContent=c; tdc.style.padding='.25rem';
+      const prob = smoothingOn ? (c + 1) / denom : c / denom;
+      const tdp=document.createElement('td'); tdp.textContent = `${prob.toFixed(3)} (${(prob*100).toFixed(1)}%)`; tdp.style.padding='.25rem';
+      tr.append(tdw, tdc, tdp); tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+    tableHost.appendChild(table);
+
+    const det=document.createElement('details');
+    det.innerHTML='<summary>Show matched n-grams</summary>';
+    const ul=document.createElement('ul'); ul.style.marginTop='.25rem';
+    matches.forEach(m=>{
+      const li=document.createElement('li');
+      const ctx = m.window.slice(0, n-1).join(' ');
+      li.innerHTML = `<span class="mono">[${ctx}] → ${m.next}</span>`;
+      ul.appendChild(li);
+    });
+    det.appendChild(ul);
+    tableHost.appendChild(det);
+  }
+
+  function computeNGrams(){
     const n = +$('#s3-n').value;
     const contextStr = $('#s3-context').value.trim().toLowerCase();
+    const smoothing = $('#s3-smooth').checked;
     const context = contextStr ? contextStr.split(/\s+/) : [];
     const contextLen = n - 1;
-    const smoothing = $('#s3-smooth').checked;
-    if (contextLen <= 0) { showStatus(sketch, `Error: n must be 2 or greater.`, 'err'); return; }
-    if (context.length !== contextLen) { showStatus(sketch, `Error: Context must be ${contextLen} words long for n=${n}.`, 'err'); return; }
 
-    // Initialize counts
-    const counts = {};
-    let total = 0;
-    if (smoothing){ vocab.forEach(w => { counts[w] = 1; }); total += vocab.length; }
+    // validations
+    if (contextLen <= 0) { status(`Error: n must be 2 or greater.`, 'err'); tableHost.innerHTML=''; return; }
+    if (context.length !== contextLen) { status(`Error: Context must be ${contextLen} word(s) for n=${n}.`, 'err'); tableHost.innerHTML=''; return; }
+
+    // raw counting (no smoothing here)
+    const rawCounts = {};
+    const matches = [];
+    let rawTotal = 0;
 
     corpus.forEach(tokens => {
       for (let i = 0; i <= tokens.length - n; i++) {
         const window = tokens.slice(i, i + n);
-        const windowContext = window.slice(0, contextLen);
-        if (windowContext.every((word, j) => word === context[j])) {
+        const winCtx = window.slice(0, contextLen);
+        if (winCtx.every((w,j)=>w === context[j])) {
           const nextWord = window[contextLen];
-          counts[nextWord] = (counts[nextWord] || 0) + 1;
-          total++;
+          rawCounts[nextWord] = (rawCounts[nextWord] || 0) + 1;
+          rawTotal++;
+          matches.push({window, next: nextWord});
         }
       }
     });
 
-    if (total === (smoothing ? vocab.length : 0)) {
-      showStatus(sketch, `No counts found for context "${contextStr}" (Data Sparsity).${smoothing ? ' (Smoothing added uniform prior)' : ''}`, 'ok');
+    if (rawTotal === 0) {
+      status(`No counts found for context "${contextStr}" (Data sparsity). ${smoothing ? 'Smoothing will still assign probability mass to unseen words (uniform +1).' : 'Try smaller n or a different context.'}`, 'ok');
+      tableHost.innerHTML = '';
       return;
     }
 
-    const items = Object.entries(counts)
-      .map(([w, c]) => ({word: w, p: c/total}))
-      .sort((a, b) => b.p - a.p)
-      .slice(0, 8); // keep it compact
-    drawBarRow(sketch, items, { normalize:false });
+    // probabilities
+    const denom = smoothing ? (rawTotal + vocab.length) : rawTotal;
+    const observedItems = Object.entries(rawCounts)
+      .map(([w,c]) => ({ word: w, p: (smoothing ? (c+1) : c) / denom }))
+      .sort((a,b)=>b.p - a.p);
+
+    // add aggregated "unseen" bar if smoothing
+    if (smoothing) {
+      const unseenCount = Math.max(0, vocab.length - Object.keys(rawCounts).length);
+      if (unseenCount > 0) {
+        const unseenMass = unseenCount / denom;
+        observedItems.push({ word: '(unseen words)', p: unseenMass });
+      }
+    }
+
+    drawBars(observedItems);
+    buildTable(rawCounts, rawTotal, contextStr, n, matches, smoothing);
   }
+
+  // events
   $('#s3-calc').addEventListener('click', computeNGrams);
   $('#s3-n').addEventListener('input', () => { $('#s3-nv').textContent = $('#s3-n').value; computeNGrams(); });
+
+  // init
+  renderCorpus();
   computeNGrams();
 })();
+
 
 /* === Scene 5–6: embeddings mini-map (Patched: numeric legend) === */
 (function(){
